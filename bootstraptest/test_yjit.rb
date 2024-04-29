@@ -4862,7 +4862,7 @@ assert_equal '["raised", "Module", "Object"]', %q{
 
 # test TrueClass#=== before and after redefining TrueClass#==
 assert_equal '[[true, false, false], [true, true, false], [true, :error, :error]]', %q{
-  def true_eqq(x)
+  def case_equal(x)
     true === x
   rescue NoMethodError
     :error
@@ -4871,17 +4871,23 @@ assert_equal '[[true, false, false], [true, true, false], [true, :error, :error]
   def test
     [
       # first one is always true because rb_equal does object comparison before calling #==
-      true_eqq(true),
+      case_equal(true),
       # these will use TrueClass#==
-      true_eqq(false),
-      true_eqq(:truthy),
+      case_equal(false),
+      case_equal(:truthy),
     ]
   end
 
   results = [test]
 
+  def rjit_enabled?
+    defined?(RubyVM::RJIT) && RubyVM::RJIT.enabled?
+  end
+
   class TrueClass
+    alias orig_eq ==
     def ==(x)
+      return orig_eq(x) if rjit_enabled? && caller[1] !~ /case_equal/
       !x
     end
   end
@@ -4889,11 +4895,18 @@ assert_equal '[[true, false, false], [true, true, false], [true, :error, :error]
   results << test
 
   class TrueClass
-    undef_method :==
+    if rjit_enabled?
+      def ==(x)
+        return orig_eq(x) unless caller[1] =~ /case_equal/
+        raise NoMethodError
+      end
+    else
+      undef_method :==
+    end
   end
 
   results << test
-} unless rjit_enabled? # Not yet working on RJIT
+}
 
 # test FalseClass#=== before and after redefining FalseClass#==
 assert_equal '[[true, false, false], [true, false, true], [true, :error, :error]]', %q{
@@ -4928,7 +4941,7 @@ assert_equal '[[true, false, false], [true, false, true], [true, :error, :error]
   end
 
   results << test
-} unless rjit_enabled? # Not yet working on RJIT
+}
 
 # test NilClass#=== before and after redefining NilClass#==
 assert_equal '[[true, false, false], [true, false, true], [true, :error, :error]]', %q{
@@ -4950,8 +4963,14 @@ assert_equal '[[true, false, false], [true, false, true], [true, :error, :error]
 
   results = [test]
 
+  def rjit_enabled?
+    defined?(RubyVM::RJIT) && RubyVM::RJIT.enabled?
+  end
+
   class NilClass
+    alias orig_eq ==
     def ==(x)
+      return orig_eq(x) if rjit_enabled? && caller[1] !~ /case_equal/
       !x
     end
   end
@@ -4959,8 +4978,15 @@ assert_equal '[[true, false, false], [true, false, true], [true, :error, :error]
   results << test
 
   class NilClass
-    undef_method :==
+    if rjit_enabled?
+      def ==(x)
+        return orig_eq(x) unless caller[1] =~ /case_equal/
+        raise NoMethodError
+      end
+    else
+      undef_method :==
+    end
   end
 
   results << test
-} unless rjit_enabled? # Not yet working on RJIT
+}
