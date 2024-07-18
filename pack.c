@@ -194,6 +194,28 @@ VALUE_to_float(VALUE obj)
 }
 
 static VALUE
+pack_E(VALUE _, VALUE from, VALUE buffer)
+{
+    VALUE res = 0;
+    if (NIL_P(buffer)) {
+        res = rb_str_buf_new(0);
+    }
+    else {
+        if (!RB_TYPE_P(buffer, T_STRING))
+            rb_raise(rb_eTypeError, "buffer must be String, not %s", rb_obj_classname(buffer));
+        rb_str_modify(buffer);
+        res = buffer;
+    }
+
+    DOUBLE_CONVWITH(tmp);
+    /* from = NEXTFROM; */
+    tmp.d = RFLOAT_VALUE(rb_to_float(from));
+    HTOVD(tmp);
+    rb_str_buf_cat(res, tmp.buf, sizeof(double));
+    return res;
+}
+
+static VALUE
 pack_pack(rb_execution_context_t *ec, VALUE ary, VALUE fmt, VALUE buffer)
 {
     static const char nul10[] = "\0\0\0\0\0\0\0\0\0\0";
@@ -1738,8 +1760,11 @@ utf8_to_uv(const char *p, long *lenp)
 
 #include "pack.rbinc"
 
+VALUE rb_cPack;
 void
 Init_pack(void)
 {
     id_associated = rb_make_internal_id();
+    rb_cPack = rb_define_class("Pack", rb_cObject);
+    rb_define_singleton_method(rb_cPack, "pack_E", pack_E, 2);
 }
