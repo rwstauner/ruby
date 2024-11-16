@@ -1109,15 +1109,15 @@ class TestRubyOptimization < Test::Unit::TestCase
   end
 
   def test_opt_duparray_send_include_p
-    code = "#{<<~'begin;'}\n#{<<~'end;'}"
-    begin;
-      x = :b
-      [:a, :b].include?(x)
-    end;
-    iseq = RubyVM::InstructionSequence.compile(code)
-    insn = iseq.disasm
-    assert_match(/opt_duparray_send/, insn)
-    assert_no_match(/\bduparray\b/, insn)
+    [
+      'x = :b; [:a, :b].include?(x)',
+      '@c = :b; [:a, :b].include?(@c)',
+    ].each do |code|
+      iseq = RubyVM::InstructionSequence.compile(code)
+      insn = iseq.disasm
+      assert_match(/opt_duparray_send/, insn)
+      assert_no_match(/\bduparray\b/, insn)
+    end
 
     x, y = :b, :c
     assert_equal(true,  [:a, :b].include?(x))

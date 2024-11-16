@@ -4174,34 +4174,37 @@ iseq_specialized_instruction(rb_iseq_t *iseq, INSN *iobj)
 
     /*
      * duparray [...]
-     * getlocal ...
+     * some insn for the arg...
      * send     <calldata!mid:include?, argc:1, ARGS_SIMPLE>, nil
      * =>
-     * getlocal ...
+     * arg insn...
      * opt_duparray_send [...], :include?, 1
      */
-    if (IS_INSN_ID(iobj, duparray) &&
-            IS_NEXT_INSN_ID(&iobj->link, getlocal) &&
-            (iobj->link.next && IS_NEXT_INSN_ID(iobj->link.next, send))) {
-        LINK_ELEMENT *send = (iobj->link.next)->next;
-        const struct rb_callinfo *ci = (struct rb_callinfo *)OPERAND_AT(send, 0);
-        if (vm_ci_simple(ci) && vm_ci_argc(ci) == 1 && vm_ci_mid(ci) == idIncludeP) {
-            // Move the array arg from duparray to opt_duparray_send.
-            VALUE ary = iobj->operands[0];
-            rb_obj_reveal(ary, rb_cArray);
+    if (IS_INSN_ID(iobj, duparray) && iobj->link.next && IS_INSN(iobj->link.next)) {
+        INSN *niobj = (INSN *)iobj->link.next;
+        if ((IS_INSN_ID(niobj, getlocal) ||
+             IS_INSN_ID(niobj, getinstancevariable)) &&
+            IS_NEXT_INSN_ID(&niobj->link, send)) {
+            LINK_ELEMENT *send = niobj->link.next;
+            const struct rb_callinfo *ci = (struct rb_callinfo *)OPERAND_AT(send, 0);
+            if (vm_ci_simple(ci) && vm_ci_argc(ci) == 1 && vm_ci_mid(ci) == idIncludeP) {
+                // Move the array arg from duparray to opt_duparray_send.
+                VALUE ary = iobj->operands[0];
+                rb_obj_reveal(ary, rb_cArray);
 
-            INSN *sendins = (INSN *)send;
-            sendins->insn_id = BIN(opt_duparray_send);
-            int operand_len = insn_len(BIN(opt_duparray_send)) - 1;
-            sendins->operand_size = operand_len;
-            sendins->operands = compile_data_calloc2(iseq, operand_len, sizeof(VALUE));
-            sendins->operands[0] = ary;
-            sendins->operands[1] = rb_id2sym(idIncludeP);
-            sendins->operands[2] = INT2FIX(1);
+                INSN *sendins = (INSN *)send;
+                sendins->insn_id = BIN(opt_duparray_send);
+                int operand_len = insn_len(BIN(opt_duparray_send)) - 1;
+                sendins->operand_size = operand_len;
+                sendins->operands = compile_data_calloc2(iseq, operand_len, sizeof(VALUE));
+                sendins->operands[0] = ary;
+                sendins->operands[1] = rb_id2sym(idIncludeP);
+                sendins->operands[2] = INT2FIX(1);
 
-            // Remove the duparray insn.
-            ELEM_REMOVE(&iobj->link);
-            return COMPILE_OK;
+                // Remove the duparray insn.
+                ELEM_REMOVE(&iobj->link);
+                return COMPILE_OK;
+            }
         }
     }
 
