@@ -4170,6 +4170,33 @@ iseq_specialized_instruction(rb_iseq_t *iseq, INSN *iobj)
                 return COMPILE_OK;
             }
         }
+
+        // Break the "else if" chain since some prior checks abort after sub-ifs.
+        // We already found "newarray".  To find `.include?(arg)` we look for
+        // the instruction(s) representing the argument followed by a "send".
+        if ((IS_INSN_ID(niobj, putstring) || IS_INSN_ID(niobj, putchilledstring) ||
+                  IS_INSN_ID(niobj, putobject) ||
+                  IS_INSN_ID(niobj, getlocal) ||
+                  IS_INSN_ID(niobj, getinstancevariable)) &&
+                 IS_NEXT_INSN_ID(&niobj->link, send)) {
+            const struct rb_callinfo *ci = (struct rb_callinfo *)OPERAND_AT((INSN *)niobj->link.next, 0);
+            if (vm_ci_simple(ci) && vm_ci_argc(ci) == 1 && vm_ci_mid(ci) == idIncludeP) {
+                VALUE num = iobj->operands[0];
+                int operand_len = insn_len(BIN(opt_newarray_send)) - 1;
+                iobj->insn_id = BIN(opt_newarray_send);
+                iobj->operands = compile_data_calloc2(iseq, operand_len, sizeof(VALUE));
+                iobj->operands[0] = FIXNUM_INC(num, 1);
+                iobj->operands[1] = INT2FIX(VM_OPT_NEWARRAY_SEND_INCLUDE_P);
+                iobj->operand_size = operand_len;
+                // Remove the original "newarray" insn.
+                ELEM_REMOVE(&iobj->link);
+                // Remove the "send" insn.
+                ELEM_REMOVE(niobj->link.next);
+                // Insert new insn where "send" was (after it's argument insn).
+                ELEM_INSERT_NEXT(&niobj->link, &iobj->link);
+                return COMPILE_OK;
+            }
+        }
     }
 
     /*
