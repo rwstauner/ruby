@@ -4172,28 +4172,34 @@ iseq_specialized_instruction(rb_iseq_t *iseq, INSN *iobj)
         }
 
         // Break the "else if" chain since some prior checks abort after sub-ifs.
-        // We already found "newarray".  To find `.include?(arg)` we look for
+        // We already found "newarray".  To match `[...].include?(arg)` we look for
         // the instruction(s) representing the argument followed by a "send".
         if ((IS_INSN_ID(niobj, putstring) || IS_INSN_ID(niobj, putchilledstring) ||
                   IS_INSN_ID(niobj, putobject) ||
                   IS_INSN_ID(niobj, getlocal) ||
                   IS_INSN_ID(niobj, getinstancevariable)) &&
                  IS_NEXT_INSN_ID(&niobj->link, send)) {
-            const struct rb_callinfo *ci = (struct rb_callinfo *)OPERAND_AT((INSN *)niobj->link.next, 0);
+
+            LINK_ELEMENT *sendobj = &(niobj->link); // Below we call ->next;
+            const struct rb_callinfo *ci;
+            // Allow any number (0 or more) of simple method calls on the argument
+            // (as in `[...].include?(arg.method1.method2)`.
+            do {
+                sendobj = sendobj->next;
+                ci = (struct rb_callinfo *)OPERAND_AT(sendobj, 0);
+            } while (vm_ci_simple(ci) && vm_ci_argc(ci) == 0 && IS_NEXT_INSN_ID(sendobj, send));
+
+            // If this send is for .include? with one arg we can do our opt.
             if (vm_ci_simple(ci) && vm_ci_argc(ci) == 1 && vm_ci_mid(ci) == idIncludeP) {
                 VALUE num = iobj->operands[0];
-                int operand_len = insn_len(BIN(opt_newarray_send)) - 1;
-                iobj->insn_id = BIN(opt_newarray_send);
-                iobj->operands = compile_data_calloc2(iseq, operand_len, sizeof(VALUE));
-                iobj->operands[0] = FIXNUM_INC(num, 1);
-                iobj->operands[1] = INT2FIX(VM_OPT_NEWARRAY_SEND_INCLUDE_P);
-                iobj->operand_size = operand_len;
+                INSN *sendins = (INSN *)sendobj;
+                sendins->insn_id = BIN(opt_newarray_send);
+                sendins->operand_size = insn_len(sendins->insn_id) - 1;
+                sendins->operands = compile_data_calloc2(iseq, sendins->operand_size, sizeof(VALUE));
+                sendins->operands[0] = FIXNUM_INC(num, 1);
+                sendins->operands[1] = INT2FIX(VM_OPT_NEWARRAY_SEND_INCLUDE_P);
                 // Remove the original "newarray" insn.
                 ELEM_REMOVE(&iobj->link);
-                // Remove the "send" insn.
-                ELEM_REMOVE(niobj->link.next);
-                // Insert new insn where "send" was (after it's argument insn).
-                ELEM_INSERT_NEXT(&niobj->link, &iobj->link);
                 return COMPILE_OK;
             }
         }
@@ -4212,18 +4218,25 @@ iseq_specialized_instruction(rb_iseq_t *iseq, INSN *iobj)
         if ((IS_INSN_ID(niobj, getlocal) ||
              IS_INSN_ID(niobj, getinstancevariable)) &&
             IS_NEXT_INSN_ID(&niobj->link, send)) {
-            LINK_ELEMENT *send = niobj->link.next;
-            const struct rb_callinfo *ci = (struct rb_callinfo *)OPERAND_AT(send, 0);
+
+            LINK_ELEMENT *sendobj = &(niobj->link); // Below we call ->next;
+            const struct rb_callinfo *ci;
+            // Allow any number (0 or more) of simple method calls on the argument
+            // (as in `[...].include?(arg.method1.method2)`.
+            do {
+                sendobj = sendobj->next;
+                ci = (struct rb_callinfo *)OPERAND_AT(sendobj, 0);
+            } while (vm_ci_simple(ci) && vm_ci_argc(ci) == 0 && IS_NEXT_INSN_ID(sendobj, send));
+
             if (vm_ci_simple(ci) && vm_ci_argc(ci) == 1 && vm_ci_mid(ci) == idIncludeP) {
                 // Move the array arg from duparray to opt_duparray_send.
                 VALUE ary = iobj->operands[0];
                 rb_obj_reveal(ary, rb_cArray);
 
-                INSN *sendins = (INSN *)send;
+                INSN *sendins = (INSN *)sendobj;
                 sendins->insn_id = BIN(opt_duparray_send);
-                int operand_len = insn_len(BIN(opt_duparray_send)) - 1;
-                sendins->operand_size = operand_len;
-                sendins->operands = compile_data_calloc2(iseq, operand_len, sizeof(VALUE));
+                sendins->operand_size = insn_len(sendins->insn_id) - 1;;
+                sendins->operands = compile_data_calloc2(iseq, sendins->operand_size, sizeof(VALUE));
                 sendins->operands[0] = ary;
                 sendins->operands[1] = rb_id2sym(idIncludeP);
                 sendins->operands[2] = INT2FIX(1);

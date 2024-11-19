@@ -1112,11 +1112,13 @@ class TestRubyOptimization < Test::Unit::TestCase
     [
       'x = :b; [:a, :b].include?(x)',
       '@c = :b; [:a, :b].include?(@c)',
+      '@c = "b"; %i[a b].include?(@c.to_sym)',
     ].each do |code|
       iseq = RubyVM::InstructionSequence.compile(code)
       insn = iseq.disasm
       assert_match(/opt_duparray_send/, insn)
       assert_no_match(/\bduparray\b/, insn)
+      assert_equal(true, eval(code))
     end
 
     x, y = :b, :c
@@ -1163,11 +1165,13 @@ class TestRubyOptimization < Test::Unit::TestCase
       'b = :b; [:a, b].include?(:b)',
       # Use Object.new to ensure that we get newarray rather than duparray.
       'value = 1; [Object.new, true, "true", 1].include?(value)',
+      'value = 1; [Object.new, "1"].include?(value.to_s)',
     ].each do |code|
       iseq = RubyVM::InstructionSequence.compile(code)
       insn = iseq.disasm
       assert_match(/opt_newarray_send/, insn)
       assert_no_match(/\bnewarray\b/, insn)
+      assert_equal(true, eval(code))
     end
 
     x, y = :b, :c
