@@ -4243,6 +4243,34 @@ iseq_specialized_instruction(rb_iseq_t *iseq, INSN *iobj)
 
                 // Remove the duparray insn.
                 ELEM_REMOVE(&iobj->link);
+                /* iobj->insn_id = BIN(putobject); */
+
+                // or...
+                /* // Change duparray to putobject so the new insn can access it. */
+                /* iobj->insn_id = BIN(putobject); */
+
+                /* INSN *sendins = (INSN *)send; */
+                /* int operand_len = insn_len(BIN(opt_newarray_send)) - 1; */
+                /* sendins->insn_id = BIN(opt_newarray_send); */
+                /* sendins->operand_size = operand_len; */
+                /* sendins->operands = compile_data_calloc2(iseq, operand_len, sizeof(VALUE)); */
+                /* sendins->operands[0] = INT2FIX(2); */
+                /* sendins->operands[1] = INT2FIX(VM_OPT_NEWARRAY_SEND_INCLUDE_P); */
+
+                // or...
+                /* int operand_len = insn_len(BIN(opt_newarray_send)) - 1; */
+                /* iobj->insn_id = BIN(opt_newarray_send); */
+                /* iobj->operand_size = operand_len; */
+                /* iobj->operands = compile_data_calloc2(iseq, operand_len, sizeof(VALUE)); */
+                /* iobj->operands[0] = ary; */
+                /* iobj->operands[1] = INT2FIX(VM_OPT_NEWARRAY_SEND_INCLUDE_P); */
+                /* iobj->operands[2] = (VALUE)ci; */
+                /* // Remove the "send" insn. */
+                /* ELEM_REMOVE(send); */
+                /* // Remove the modified insn from its original "newarray" position... */
+                /* ELEM_REMOVE(&iobj->link); */
+                /* // and insert it after the getlocal insn. */
+                /* ELEM_INSERT_NEXT(iobj->link.next, &iobj->link); */
                 return COMPILE_OK;
             }
         }
